@@ -1,5 +1,7 @@
 # Kubernetes GitOps Delivery
 
+[![Kubernetes validation](https://github.com/hdevops9-ops/kubernetes-gitops-delivery/actions/workflows/validate.yml/badge.svg)](https://github.com/hdevops9-ops/kubernetes-gitops-delivery/actions/workflows/validate.yml)
+
 A small shared-platform delivery lab with Argo CD, Kustomize, a restricted
 non-root workload, health checks, a rolling update policy, and a disruption budget.
 Personal portfolio project; no employer manifests or production claims.
