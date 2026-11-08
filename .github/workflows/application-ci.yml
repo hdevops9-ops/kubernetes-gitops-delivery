@@ -2,9 +2,9 @@ name: DevSecOps Application CI
 on:
   push:
     branches: [main, runtime-integration]
-    paths: [app/**, charts/**, environments/**, gitops/**, scripts/**, security/**, .github/workflows/application-ci.yml]
+    paths: [app/**, charts/**, environments/**, gitops/**, scripts/**, security/**, .github/workflows/application-ci.yml, .github/workflows/application-release.yml, .github/workflows/promote.yml]
   pull_request:
-    paths: [app/**, charts/**, environments/**, gitops/**, scripts/**, security/**, .github/workflows/application-ci.yml]
+    paths: [app/**, charts/**, environments/**, gitops/**, scripts/**, security/**, .github/workflows/application-ci.yml, .github/workflows/application-release.yml, .github/workflows/promote.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -116,6 +116,8 @@ jobs:
           mkdir -p evidence
           kubectl get pods -A -o wide > evidence/all-pods.txt || true
           kubectl -n platform-dev get events --sort-by=.lastTimestamp > evidence/events.txt || true
+          kubectl -n gitops-fixtures logs deployment/delivery-git --tail=100 > evidence/git-server.log || true
+          kubectl -n argocd logs deployment/argocd-repo-server --tail=100 > evidence/repo-server.log || true
           kubectl -n argocd get application platform-api-dev -o json > evidence/application-diagnostic.json || true
           kubectl -n argocd logs statefulset/argocd-application-controller --tail=100 > evidence/controller.log || true
           rm -f evidence/image.tar

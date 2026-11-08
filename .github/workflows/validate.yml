@@ -1,5 +1,10 @@
 name: Kubernetes render and schema validation
-on: [push, pull_request]
+on:
+  push:
+    paths: [k8s/**, .github/workflows/validate.yml]
+  pull_request:
+    paths: [k8s/**, .github/workflows/validate.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

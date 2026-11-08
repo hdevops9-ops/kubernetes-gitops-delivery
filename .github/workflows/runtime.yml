@@ -1,5 +1,10 @@
 name: Kubernetes and Argo CD runtime
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    paths: [k8s/**, argocd/**, kind.yaml, tests/runtime.sh, .github/workflows/runtime.yml]
+  pull_request:
+    paths: [k8s/**, argocd/**, kind.yaml, tests/runtime.sh, .github/workflows/runtime.yml]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

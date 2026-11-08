@@ -11,17 +11,11 @@ git -C "$work" config user.email 'ci-integration@example.invalid'
 docker load -i evidence/image.tar
 # This registry is reachable only on loopback and the disposable kind network.
 docker run -d --name delivery-registry -p 127.0.0.1:5001:5000 registry:2
-cat > "$RUNNER_TEMP/helm-kind.yaml" <<'KIND'
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-containerdConfigPatches:
-- |-
-  [plugins."io.containerd.grpc.v1.cri".registry]
-    config_path = "/etc/containerd/certs.d"
-nodes:
-- role: control-plane
-- role: worker
-- role: worker
+export TEST_REPOS_DIR="$repos"
+python3 - <<'KIND' > "$RUNNER_TEMP/helm-kind.yaml"
+import os,yaml
+mounts=[{'hostPath':os.environ['TEST_REPOS_DIR'],'containerPath':'/git-fixtures'}]
+yaml.safe_dump({'kind':'Cluster','apiVersion':'kind.x-k8s.io/v1alpha4','containerdConfigPatches':['[plugins."io.containerd.grpc.v1.cri".registry]\n  config_path = "/etc/containerd/certs.d"'],'nodes':[{'role':role,'extraMounts':mounts} for role in ['control-plane','worker','worker']]},open('/dev/stdout','w'))
 KIND
 kind create cluster --name helm-delivery --image kindest/node:v1.32.2 --config "$RUNNER_TEMP/helm-kind.yaml" --wait 120s
 docker network connect kind delivery-registry
@@ -40,11 +34,23 @@ git clone --bare "$work" "$repos/source.git"
 # Serve the test repository read-only over the isolated Docker network. The Git
 # commits below are test fixtures, never pushed to the user's GitHub history.
 mkdir -p "$RUNNER_TEMP/git-daemon"
-printf 'FROM alpine:3.21\nRUN apk add --no-cache git git-daemon\nENTRYPOINT ["git","daemon","--verbose","--export-all","--base-path=/repos","--listen=0.0.0.0","--port=9418","--reuseaddr","/repos"]\n' > "$RUNNER_TEMP/git-daemon/Dockerfile"
-docker build -t delivery-git-server "$RUNNER_TEMP/git-daemon"
-docker run -d --name delivery-git --network kind -v "$repos:/repos:ro" delivery-git-server
-git_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' delivery-git)
-export TEST_GIT_URL="git://$git_ip/source.git"
+printf 'FROM alpine:3.21\nRUN apk add --no-cache git git-daemon\nENTRYPOINT ["git","-c","safe.directory=/repos/source.git","daemon","--verbose","--export-all","--base-path=/repos","--listen=0.0.0.0","--port=9418","--reuseaddr","/repos"]\n' > "$RUNNER_TEMP/git-daemon/Dockerfile"
+docker build -t delivery-git-server:ci "$RUNNER_TEMP/git-daemon"
+kind load docker-image delivery-git-server:ci --name helm-delivery
+kubectl create namespace gitops-fixtures
+python3 - <<'GITSERVICE' | kubectl apply -f -
+import json
+pod={'containers':[{'name':'git','image':'delivery-git-server:ci','imagePullPolicy':'Never','ports':[{'containerPort':9418}],
+      'volumeMounts':[{'name':'repository','mountPath':'/repos','readOnly':True}],
+      'securityContext':{'runAsUser':10001,'runAsNonRoot':True,'allowPrivilegeEscalation':False,'readOnlyRootFilesystem':True,'capabilities':{'drop':['ALL']}}}],
+      'securityContext':{'seccompProfile':{'type':'RuntimeDefault'}},'automountServiceAccountToken':False,
+      'volumes':[{'name':'repository','hostPath':{'path':'/git-fixtures','type':'Directory'}}]}
+objects=[{'apiVersion':'apps/v1','kind':'Deployment','metadata':{'name':'delivery-git','namespace':'gitops-fixtures'},'spec':{'replicas':1,'selector':{'matchLabels':{'app':'delivery-git'}},'template':{'metadata':{'labels':{'app':'delivery-git'}},'spec':pod}}},
+         {'apiVersion':'v1','kind':'Service','metadata':{'name':'delivery-git','namespace':'gitops-fixtures'},'spec':{'selector':{'app':'delivery-git'},'ports':[{'port':9418,'targetPort':9418}]}}]
+print(json.dumps({'apiVersion':'v1','kind':'List','items':objects}))
+GITSERVICE
+kubectl -n gitops-fixtures rollout status deployment/delivery-git --timeout=120s
+export TEST_GIT_URL="git://delivery-git.gitops-fixtures.svc.cluster.local/source.git"
 kubectl create namespace argocd
 kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.6.1/manifests/install.yaml
 kubectl -n argocd wait --for=condition=Ready pods --all --timeout=300s

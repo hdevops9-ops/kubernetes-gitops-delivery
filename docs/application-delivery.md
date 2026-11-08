@@ -41,7 +41,7 @@ flowchart TD
 - Actionlint checks CI, release, and promotion workflow syntax. Actions are pinned
   to verified commit SHAs; Dependabot proposes updates.
 - Runtime testing uses an actual image manifest digest in a disposable registry,
-  a three-node kind cluster, and Argo CD 3.6.1. A local read-only Git daemon serves
+  a three-node kind cluster, and Argo CD 3.6.1. An in-cluster read-only Git daemon serves
   the test commits; these are not fake contributions to GitHub history.
 - Passive ZAP DAST has explicit failure rules for selected security headers. It is
   not an authenticated penetration test, active DAST, or business-logic assessment.
