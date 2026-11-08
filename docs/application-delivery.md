@@ -28,7 +28,7 @@ flowchart TD
 
 ## CI gates
 
-- Three HTTP unit tests and two promotion-tool tests.
+- Three HTTP unit tests, two promotion-tool tests, and four DAST-policy tests.
 - Bandit medium/high severity and confidence gate. The container bind address is
   a documented, line-scoped exception; other findings are not suppressed globally.
 - `pip-audit` evaluates application requirements. The current application has no
@@ -43,7 +43,8 @@ flowchart TD
 - Runtime testing uses an actual image manifest digest in a disposable registry,
   a three-node kind cluster, and Argo CD 3.6.1. An in-cluster read-only Git daemon serves
   the test commits; these are not fake contributions to GitHub history.
-- Passive ZAP DAST has explicit failure rules for selected security headers. It is
+- Passive ZAP DAST has explicit failure rules for selected security headers and a
+  JSON policy that blocks other medium/high findings and rejects empty reports. It is
   not an authenticated penetration test, active DAST, or business-logic assessment.
 
 ## First release and promotion

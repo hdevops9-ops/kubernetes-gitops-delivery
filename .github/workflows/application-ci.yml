@@ -110,6 +110,8 @@ jobs:
           chmod 777 evidence/zap
           cp security/zap-rules.tsv evidence/zap/rules.tsv
           docker run --rm --network host -v "$PWD/evidence/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:2.17.0 zap-baseline.py -t http://127.0.0.1:8088 -c rules.tsv -I -r zap.html -J zap.json
+      - name: Enforce medium/high DAST policy
+        run: python3 scripts/check_dast.py evidence/zap/zap.json
       - name: Gather diagnostics
         if: always()
         run: |
