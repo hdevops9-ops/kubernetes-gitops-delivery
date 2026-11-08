@@ -15,8 +15,8 @@ jobs:
   code:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: pip install bandit==1.8.3 pip-audit==2.8.0 PyYAML==6.0.2
@@ -25,19 +25,19 @@ jobs:
       - name: Python SAST
         run: bandit -r app/server.py -ll -ii
       - name: Python dependency audit (no third-party application packages)
-        run: pip-audit -r app/requirements.txt --disable-pip
+        run: pip-audit -r app/requirements.txt
   secrets:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - run: docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.2 detect --source=/repo --redact --exit-code=1
   chart-policy:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4.3.0
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
         with:
           version: v4.3.1
       - name: Helm lint and render both environments
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build application once
         run: |
           mkdir -p evidence "$RUNNER_TEMP/trivy"
@@ -69,7 +69,7 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" aquasec/trivy:0.61.0 image --severity HIGH,CRITICAL --exit-code 1 platform-api:ci
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/evidence:/out" -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" aquasec/trivy:0.61.0 image --format spdx-json --output /out/sbom.spdx.json platform-api:ci
           docker save platform-api:ci -o evidence/image.tar
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: application-build-${{ github.sha }}
           path: |
@@ -82,12 +82,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: pip install PyYAML==6.0.2
-      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
         with:
           version: v1.32.2
       - name: Install kind in runner-owned directory
@@ -95,7 +95,7 @@ jobs:
           curl -fsSL https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64 -o "$RUNNER_TEMP/kind"
           chmod +x "$RUNNER_TEMP/kind"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: application-build-${{ github.sha }}
           path: evidence
@@ -118,7 +118,7 @@ jobs:
           kubectl -n argocd get application platform-api-dev -o json > evidence/application-diagnostic.json || true
           kubectl -n argocd logs statefulset/argocd-application-controller --tail=100 > evidence/controller.log || true
           rm -f evidence/image.tar
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: helm-gitops-evidence
