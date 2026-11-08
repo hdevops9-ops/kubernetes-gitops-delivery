@@ -4,6 +4,7 @@ metadata:
   name: platform-dev
   labels:
     pod-security.kubernetes.io/enforce: restricted
+    platform-delivery: enforced
 ---
 apiVersion: v1
 kind: Namespace
@@ -11,3 +12,4 @@ metadata:
   name: platform-production
   labels:
     pod-security.kubernetes.io/enforce: restricted
+    platform-delivery: enforced

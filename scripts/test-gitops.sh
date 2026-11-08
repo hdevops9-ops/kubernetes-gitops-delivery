@@ -49,6 +49,18 @@ kubectl create namespace argocd
 kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.6.1/manifests/install.yaml
 kubectl -n argocd wait --for=condition=Ready pods --all --timeout=300s
 kubectl apply -f gitops/bootstrap/namespaces.yaml
+kubectl apply -f gitops/bootstrap/image-policy.yaml
+# Prove admission rejects mutable image tags, using server-side dry-run only.
+blocked=false
+for attempt in $(seq 1 30); do
+  if kubectl -n platform-dev create deployment policy-negative-check --image=nginx:latest --dry-run=client -o yaml | kubectl -n platform-dev apply --dry-run=server -f - > evidence/admission-negative-test.txt 2>&1; then
+    sleep 2
+  else
+    if grep -q 'immutable SHA256 image digests' evidence/admission-negative-test.txt; then blocked=true;break;fi
+    cat evidence/admission-negative-test.txt;exit 1
+  fi
+done
+[[ "$blocked" == true ]]
 python3 - <<'BOOTSTRAP'
 import os,yaml,json,subprocess
 project=yaml.safe_load(open('gitops/projects/dev.yaml'));project['spec']['sourceRepos']=[os.environ['TEST_GIT_URL']]
@@ -79,6 +91,7 @@ check_version() {
 trap '[[ -z "$forward_pid" ]] || kill "$forward_pid" 2>/dev/null || true' EXIT
 wait_sync "$(git -C "$work" rev-parse HEAD)"
 forward;check_version ci-v1
+printf 'admission rejected mutable image: passed\n' > evidence/admission-results.txt
 printf 'digest-pinned image deployed through Helm and Argo CD: passed\n' > evidence/helm-gitops-results.txt
 kubectl -n platform-dev scale deploy/platform-api --replicas=3
 for attempt in $(seq 1 60); do

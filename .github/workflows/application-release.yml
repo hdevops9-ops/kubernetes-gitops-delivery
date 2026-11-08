@@ -60,6 +60,8 @@ jobs:
           SOURCE_SHA: ${{ steps.source.outputs.sha }}
         run: |
           docker load -i release-artifact/image.tar
+          revision=$(docker inspect platform-api:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          test "$revision" = "$SOURCE_SHA"
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/platform-api"
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker tag platform-api:ci "$image:sha-$SOURCE_SHA"

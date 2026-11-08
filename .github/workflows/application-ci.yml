@@ -43,6 +43,7 @@ jobs:
       - name: Helm lint and render both environments
         run: |
           mkdir -p rendered
+          cp gitops/bootstrap/image-policy.yaml rendered/bootstrap-policy.yaml
           for target in dev production; do
             helm lint charts/platform-api -f "environments/$target/values.yaml" --strict
             helm template platform-api charts/platform-api -f "environments/$target/values.yaml" --namespace "platform-$target" > "rendered/$target.yaml"
