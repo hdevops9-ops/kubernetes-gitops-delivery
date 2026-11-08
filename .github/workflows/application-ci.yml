@@ -1,0 +1,131 @@
+name: DevSecOps Application CI
+on:
+  push:
+    branches: [main, runtime-integration]
+    paths: [app/**, charts/**, environments/**, gitops/**, scripts/**, security/**, .github/workflows/application-ci.yml]
+  pull_request:
+    paths: [app/**, charts/**, environments/**, gitops/**, scripts/**, security/**, .github/workflows/application-ci.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: app-ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  code:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install bandit==1.8.3 pip-audit==2.8.0 PyYAML==6.0.2
+      - run: python -m unittest discover -s app -v
+      - run: python -m unittest discover -s scripts -v
+      - name: Python SAST
+        run: bandit -r app/server.py -ll -ii
+      - name: Python dependency audit (no third-party application packages)
+        run: pip-audit -r app/requirements.txt --disable-pip
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: docker run --rm -v "$PWD:/repo:ro" zricethezav/gitleaks:v8.24.2 detect --source=/repo --redact --exit-code=1
+  chart-policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v4.3.1
+      - name: Helm lint and render both environments
+        run: |
+          mkdir -p rendered
+          for target in dev production; do
+            helm lint charts/platform-api -f "environments/$target/values.yaml" --strict
+            helm template platform-api charts/platform-api -f "environments/$target/values.yaml" --namespace "platform-$target" > "rendered/$target.yaml"
+          done
+          helm template platform-api charts/platform-api --set autoscaling.enabled=true --set ingress.enabled=true > rendered/optional-features.yaml
+      - name: Kubernetes schema validation
+        run: docker run --rm -v "$PWD/rendered:/work:ro" ghcr.io/yannh/kubeconform:v0.6.7 -strict -summary -kubernetes-version 1.32.0 /work
+      - name: Rendered workload security gate
+        run: docker run --rm -v "$PWD/rendered:/repo:ro" aquasec/trivy:0.61.0 config --severity HIGH,CRITICAL --exit-code 1 /repo
+      - name: Workflow syntax
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7 -shellcheck= -pyflakes= .github/workflows/application-ci.yml .github/workflows/application-release.yml .github/workflows/promote.yml
+  container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application once
+        run: |
+          mkdir -p evidence "$RUNNER_TEMP/trivy"
+          docker build --pull --label "org.opencontainers.image.revision=$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t platform-api:ci app
+      - name: Container vulnerability gate and SBOM
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/evidence:/out" -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" aquasec/trivy:0.61.0 image --format json --output /out/image-findings.json platform-api:ci
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" aquasec/trivy:0.61.0 image --severity HIGH,CRITICAL --exit-code 1 platform-api:ci
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/evidence:/out" -v "$RUNNER_TEMP/trivy:/root/.cache/trivy" aquasec/trivy:0.61.0 image --format spdx-json --output /out/sbom.spdx.json platform-api:ci
+          docker save platform-api:ci -o evidence/image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: application-build-${{ github.sha }}
+          path: |
+            evidence/image.tar
+            evidence/sbom.spdx.json
+            evidence/image-findings.json
+          retention-days: 2
+  gitops-integration:
+    needs: [code, secrets, chart-policy, container]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML==6.0.2
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.2
+      - name: Install kind in runner-owned directory
+        run: |
+          curl -fsSL https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64 -o "$RUNNER_TEMP/kind"
+          chmod +x "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: application-build-${{ github.sha }}
+          path: evidence
+      - name: Digest deployment, promotion, failed release, and Git revert
+        run: bash scripts/test-gitops.sh
+      - name: Passive DAST with explicit failure rules
+        run: |
+          docker load -i evidence/image.tar
+          docker run -d --name dast-api -p 127.0.0.1:8088:8080 platform-api:ci
+          mkdir -p evidence/zap
+          chmod 777 evidence/zap
+          cp security/zap-rules.tsv evidence/zap/rules.tsv
+          docker run --rm --network host -v "$PWD/evidence/zap:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:2.17.0 zap-baseline.py -t http://127.0.0.1:8088 -c rules.tsv -I -r zap.html -J zap.json
+      - name: Gather diagnostics
+        if: always()
+        run: |
+          mkdir -p evidence
+          kubectl get pods -A -o wide > evidence/all-pods.txt || true
+          kubectl -n platform-dev get events --sort-by=.lastTimestamp > evidence/events.txt || true
+          kubectl -n argocd get application platform-api-dev -o json > evidence/application-diagnostic.json || true
+          kubectl -n argocd logs statefulset/argocd-application-controller --tail=100 > evidence/controller.log || true
+          rm -f evidence/image.tar
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: helm-gitops-evidence
+          path: evidence/
+          retention-days: 14
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name helm-delivery
+          docker rm -f delivery-registry delivery-git dast-api || true

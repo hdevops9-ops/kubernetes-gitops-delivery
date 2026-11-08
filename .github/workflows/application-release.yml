@@ -1,0 +1,98 @@
+name: Publish verified application digest
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main-branch DevSecOps Application CI run ID
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      id-token: write
+    steps:
+      - name: Verify trusted CI source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/source-run.json"
+          python3 - <<'CHECK'
+          import json,os
+          d=json.load(open(os.environ['RUNNER_TEMP']+'/source-run.json'))
+          assert d['name']=='DevSecOps Application CI'
+          assert d['conclusion']=='success' and d['status']=='completed'
+          assert d['event']=='push' and d['head_branch']=='main'
+          assert d['head_repository']['full_name']==os.environ['GITHUB_REPOSITORY']
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('sha='+d['head_sha']+'\n')
+          CHECK
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: application-build-${{ steps.source.outputs.sha }}
+          path: release-artifact
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.ci_run_id }}
+      - uses: sigstore/cosign-installer@v3.8.2
+        with:
+          cosign-release: v2.4.3
+      - name: Require release environment protection setup
+        env:
+          CONFIRMED: ${{ vars.RELEASE_GUARDS_CONFIRMED }}
+        run: test "$CONFIRMED" = true
+      - name: Publish the already-tested image
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          docker load -i release-artifact/image.tar
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/platform-api"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag platform-api:ci "$image:sha-$SOURCE_SHA"
+          docker push "$image:sha-$SOURCE_SHA"
+          docker pull "$image:sha-$SOURCE_SHA"
+          ref=$(docker inspect "$image:sha-$SOURCE_SHA" --format '{{index .RepoDigests 0}}')
+          [[ "$ref" =~ @sha256:[a-f0-9]{64}$ ]]
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Keyless signature and SBOM attestation
+        env:
+          IMAGE_REF: ${{ steps.publish.outputs.ref }}
+        run: |
+          cosign sign --yes "$IMAGE_REF"
+          cosign attest --yes --type spdxjson --predicate release-artifact/sbom.spdx.json "$IMAGE_REF"
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/application-release.yml@refs/heads/main"
+          cosign verify --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REF" > signature-verification.json
+          cosign verify-attestation --type spdxjson --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REF" > sbom-verification.json
+      - name: Write release manifest
+        env:
+          IMAGE_REF: ${{ steps.publish.outputs.ref }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          python3 - <<'MANIFEST'
+          import json,os
+          json.dump({'image':os.environ['IMAGE_REF'],'source_commit':os.environ['SOURCE_SHA'],'ci_run_id':os.environ['CI_RUN_ID'],'release_run_id':os.environ['GITHUB_RUN_ID']},open('release.json','w'),indent=2)
+          MANIFEST
+        # Inputs are passed as data, not interpolated into shell code.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-release
+          path: |
+            release.json
+            signature-verification.json
+            sbom-verification.json
+          retention-days: 14

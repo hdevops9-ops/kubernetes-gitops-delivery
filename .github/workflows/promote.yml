@@ -1,0 +1,71 @@
+name: Propose GitOps promotion
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        options: [dev, production]
+        required: true
+      image_ref:
+        description: Signed ghcr.io/.../platform-api@sha256:... from verified release
+        type: string
+        required: true
+      version:
+        description: Source commit SHA or reviewed release version
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  propose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.target }}-promotion
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyYAML==6.0.2
+      - uses: sigstore/cosign-installer@v3.8.2
+        with:
+          cosign-release: v2.4.3
+      - name: Verify release identity before touching values
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+          GH_TOKEN: ${{ github.token }}
+          CONFIRMED: ${{ vars.PROMOTION_GUARDS_CONFIRMED }}
+        run: |
+          test "$CONFIRMED" = true
+          [[ "$IMAGE_REF" =~ ^ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/platform-api@sha256:[a-f0-9]{64}$ ]]
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/application-release.yml@refs/heads/main"
+          cosign verify --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REF"
+          cosign verify-attestation --type spdxjson --certificate-identity "$identity" --certificate-oidc-issuer https://token.actions.githubusercontent.com "$IMAGE_REF"
+      - name: Update one environment
+        env:
+          TARGET: ${{ inputs.target }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/promote.py "$TARGET" "${IMAGE_REF%@*}" "${IMAGE_REF#*@}" "$VERSION"
+      - name: Open reviewable promotion PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          branch="promotion/$TARGET/$GITHUB_RUN_ID"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$branch"
+          git add "environments/$TARGET/values.yaml"
+          git commit -m "Promote verified image digest to $TARGET"
+          gh auth setup-git
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "Promote verified image to $TARGET" --body 'Updates only the environment image digest and release metadata after signature and SBOM verification. Review the values diff, CI results, and Argo CD sync policy before merging. This workflow never merges its own PR.'
