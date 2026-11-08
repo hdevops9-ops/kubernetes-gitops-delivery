@@ -1,0 +1,5 @@
+initial deployment and HTTP: passed
+Argo CD replica drift correction: passed
+Pod failure and replacement: passed
+bad-image promotion failure detected: passed
+restore source and HTTP recovery: passed

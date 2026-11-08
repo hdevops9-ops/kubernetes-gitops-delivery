@@ -1,4 +1,4 @@
-# Kubernetes GitOps Delivery
+# Kubernetes Delivery Platform
 
 [![Kubernetes validation](https://github.com/hdevops9-ops/kubernetes-gitops-delivery/actions/workflows/validate.yml/badge.svg)](https://github.com/hdevops9-ops/kubernetes-gitops-delivery/actions/workflows/validate.yml)
 
@@ -51,9 +51,7 @@ Argo CD reconcile. A manual kubectl rollback will be undone by GitOps reconcilia
 
 ## Evidence and checks
 
-CI renders manifests and runs Kubernetes schema validation. A real kind/EKS
-runtime test was not possible in the authoring environment. Save actual rollout,
-drift correction, and rollback observations in `docs/experiment.md` when you run it.
+CI renders manifests and runs Kubernetes schema validation. A real kind cluster and Argo CD controller have now passed the runtime workflow. The verified deployment, self-heal, pod-replacement, failed-promotion, and recovery observations are linked below.
 
 ## Cleanup
 
@@ -70,3 +68,7 @@ kind delete cluster --name platform-lab
 - https://argo-cd.readthedocs.io/en/stable/getting_started/
 - https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/
 - https://kubernetes.io/docs/concepts/workloads/pods/disruptions/
+
+## Verified runtime
+
+[Successful integration run](https://github.com/hdevops9-ops/kubernetes-gitops-delivery/actions/runs/42449719050): a real three-node kind cluster, Argo CD deployment, HTTP response, replica-drift correction, pod replacement, intentionally failed image promotion, and restored-image recovery. [Results](docs/runtime-validation.md). Reproduce with `GH_READ_TOKEN=... GITHUB_REPOSITORY=owner/repo GITHUB_SHA=commit bash tests/runtime.sh`; use a read-only repository token and disposable cluster only. The token is never included in the evidence artifact.
