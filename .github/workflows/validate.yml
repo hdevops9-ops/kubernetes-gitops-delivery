@@ -1,0 +1,16 @@
+name: Kubernetes render and schema validation
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.2
+      - run: kubectl kustomize k8s/base > rendered.yaml
+      - uses: docker://ghcr.io/yannh/kubeconform:v0.6.7
+        with:
+          args: -strict -summary -kubernetes-version 1.32.0 rendered.yaml
