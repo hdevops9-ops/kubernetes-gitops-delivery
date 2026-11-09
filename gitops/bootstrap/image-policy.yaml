@@ -1,0 +1,31 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: platform-deployment-images
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments]
+  validations:
+    - expression: "object.spec.template.spec.containers.all(c, c.image.matches('^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$'))"
+      message: Platform deployments require immutable SHA256 image digests.
+    - expression: "!has(object.spec.template.spec.initContainers) || object.spec.template.spec.initContainers.all(c, c.image.matches('^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$'))"
+      message: Init containers require immutable SHA256 image digests.
+    - expression: "(!has(object.spec.template.spec.hostNetwork) || !object.spec.template.spec.hostNetwork) && (!has(object.spec.template.spec.hostPID) || !object.spec.template.spec.hostPID) && (!has(object.spec.template.spec.hostIPC) || !object.spec.template.spec.hostIPC)"
+      message: Platform deployments cannot use host namespaces.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: platform-deployment-images
+spec:
+  policyName: platform-deployment-images
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        platform-delivery: enforced

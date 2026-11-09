@@ -1,0 +1,43 @@
+name: Kubernetes and Argo CD runtime
+on:
+  push:
+    paths: [k8s/**, argocd/**, kind.yaml, tests/runtime.sh, .github/workflows/runtime.yml]
+  pull_request:
+    paths: [k8s/**, argocd/**, kind.yaml, tests/runtime.sh, .github/workflows/runtime.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.32.2
+      - name: Install kind
+        run: |
+          curl -fsSL https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64 -o "$RUNNER_TEMP/kind"
+          chmod +x "$RUNNER_TEMP/kind"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Deploy and exercise GitOps recovery
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+        run: bash tests/runtime.sh
+      - name: Gather diagnostics without secrets
+        if: always()
+        run: |
+          mkdir -p evidence
+          kubectl get pods -A -o wide > evidence/all-pods.txt || true
+          kubectl -n platform-lab get events --sort-by=.lastTimestamp > evidence/events.txt || true
+          kubectl -n argocd logs statefulset/argocd-application-controller --tail=150 > evidence/controller.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitops-runtime-evidence
+          path: evidence/
+          retention-days: 14
+      - name: Delete disposable cluster
+        if: always()
+        run: kind delete cluster --name delivery

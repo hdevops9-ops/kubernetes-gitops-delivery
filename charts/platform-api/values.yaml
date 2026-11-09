@@ -1,0 +1,27 @@
+replicaCount: 2
+image:
+  repository: ghcr.io/hdevops9-ops/platform-api
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+release:
+  version: not-promoted
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+networkPolicy:
+  enabled: true
+ingress:
+  enabled: false
+  className: nginx
+  host: replace.example.invalid
+  tlsSecretName: replace-tls-secret

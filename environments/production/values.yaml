@@ -1,0 +1,9 @@
+image:
+  repository: ghcr.io/hdevops9-ops/platform-api
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  pullPolicy: IfNotPresent
+release:
+  version: not-promoted
+replicaCount: 3
+autoscaling:
+  enabled: false

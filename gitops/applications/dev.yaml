@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-api-dev
+  namespace: argocd
+spec:
+  project: platform-dev
+  source:
+    repoURL: https://github.com/hdevops9-ops/kubernetes-gitops-delivery.git
+    targetRevision: main
+    path: charts/platform-api
+    helm:
+      releaseName: platform-api
+      valueFiles:
+      - ../../environments/dev/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: platform-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

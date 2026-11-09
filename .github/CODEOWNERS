@@ -1,0 +1,4 @@
+* @hdevops9-ops
+/.github/ @hdevops9-ops
+/environments/production/ @hdevops9-ops
+/gitops/ @hdevops9-ops
