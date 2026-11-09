@@ -32,7 +32,7 @@ jobs:
           kubectl get pods -A -o wide > evidence/all-pods.txt || true
           kubectl -n platform-lab get events --sort-by=.lastTimestamp > evidence/events.txt || true
           kubectl -n argocd logs statefulset/argocd-application-controller --tail=150 > evidence/controller.log || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: gitops-runtime-evidence

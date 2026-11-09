@@ -90,7 +90,7 @@ jobs:
           json.dump({'image':os.environ['IMAGE_REF'],'source_commit':os.environ['SOURCE_SHA'],'ci_run_id':os.environ['CI_RUN_ID'],'release_run_id':os.environ['GITHUB_RUN_ID']},open('release.json','w'),indent=2)
           MANIFEST
         # Inputs are passed as data, not interpolated into shell code.
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: verified-release
           path: |
