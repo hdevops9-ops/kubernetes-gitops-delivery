@@ -100,6 +100,18 @@ HPA rendering is tested; real HPA load behavior is not tested by the default run
 Ingress rendering includes TLS; real DNS, certificates, ingress routing and WAF
 are environment-specific acceptance checks.
 
+## Verified Helm recovery run
+
+The [GitHub Actions run](https://github.com/hdevops9-ops/kubernetes-gitops-delivery/actions/runs/42453087241) passed on commit `54e50f99ecb9d7689204b2ea698e2de1960c934f`. The integration job ran against a disposable Kubernetes cluster with Argo CD.
+
+- Deployed the CI-built image by digest and checked the API response.
+- Changed the live replica count and verified Argo CD restored the count from Git.
+- Promoted a new configuration through Git, then committed a nonexistent image digest and verified the previous release still answered the HTTP probe.
+- Reverted the bad commit in Git and verified Argo CD synced the revert and returned to Healthy.
+- Passed the passive DAST policy gate against the test API.
+
+These checks cover the disposable cluster. Registry publishing, signing, and production deployment require separate validation.
+
 ## Rollback and operations
 
 Revert the environment promotion commit in Git and review the rollback PR. Argo CD
